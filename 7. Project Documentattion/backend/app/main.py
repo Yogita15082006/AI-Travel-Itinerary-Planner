@@ -23,15 +23,10 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS — allow only the configured frontend origin in production
-allowed_origins = [settings.frontend_origin]
-if not settings.is_production:
-    # Allow localhost variants in development
-    allowed_origins += [
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:5173",
-    ]
+# CORS — origins are driven entirely by the FRONTEND_ORIGIN environment variable.
+# In production set: FRONTEND_ORIGIN=https://your-app.vercel.app
+# In development the default already includes http://localhost:5173
+allowed_origins = settings.allowed_origins
 
 app.add_middleware(
     CORSMiddleware,

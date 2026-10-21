@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
-from typing import Optional
+from typing import List, Optional
 import logging
 
 
@@ -23,7 +23,15 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
 
     # Application
+    # Comma-separated list of allowed frontend origins, e.g.:
+    # FRONTEND_ORIGIN=https://my-app.vercel.app,http://localhost:5173
     frontend_origin: str = "http://localhost:5173"
+
+    @property
+    def allowed_origins(self) -> List[str]:
+        """Return the frontend_origin value split on commas, stripping whitespace."""
+        return [o.strip() for o in self.frontend_origin.split(",") if o.strip()]
+
     environment: str = "development"
     log_level: str = "INFO"
 
