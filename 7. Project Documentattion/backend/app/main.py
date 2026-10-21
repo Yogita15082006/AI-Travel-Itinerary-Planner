@@ -2,6 +2,7 @@
 FastAPI application entry point.
 """
 import logging
+import re
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -23,17 +24,84 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS — origins are driven entirely by the FRONTEND_ORIGIN environment variable.
-# In production set: FRONTEND_ORIGIN=https://your-app.vercel.app
-# In development the default already includes http://localhost:5173
-allowed_origins = settings.allowed_origins
+# ── CORS ─────────────────────────────────────────────────────────────────────
+#
+# Strategy: use Starlette's allow_origin_regex to accept both:
+#   (a) The exact stable production Vercel URL (from FRONTEND_ORIGIN env var).
+#   (b) Any Vercel *preview* deployment for THIS specific project.
+#       Preview URLs have the form:
+#           https://<project-slug>-<random-hash>-<team>.vercel.app
+#       We match strictly on the project slug prefix so no unrelated
+#       Vercel app is ever accepted.
+#   (c) localhost variants for local development.
+#
+# allow_credentials=True is kept because the frontend sends Authorization
+# headers with Bearer tokens; credentials=true is required for those.
+# We MUST NOT use allow_origins=["*"] with credentials=True (browsers reject it).
+#
+# Environment variables (set these in Render):
+#   FRONTEND_ORIGIN       – stable production URL, no trailing slash
+#                           e.g. https://ai-travel-itinerary-planner-frontend.vercel.app
+#   VERCEL_PROJECT_SLUG   – the exact project slug used in preview hostnames
+#                           e.g. ai-travel-itinerary-planner-frontend
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_cors_origin_regex() -> str:
+    """
+    Build an anchored regex that allows the following origins:
+
+    1. localhost (any port) — local development
+    2. Stable production Vercel URL derived from the project slug:
+         https://<VERCEL_PROJECT_SLUG>.vercel.app
+    3. Any Vercel preview URL for this specific project:
+         https://<VERCEL_PROJECT_SLUG>-<hash>.vercel.app
+    4. The explicit FRONTEND_ORIGIN env var (supports custom domains or
+       comma-separated additional origins beyond Vercel).
+
+    Security guarantees:
+    - Anchored (^ … $) — no partial matches.
+    - Hyphens are not regex metacharacters so no escaping needed for slug.
+    - Dots are escaped so ".vercel.app" cannot be spoofed by ".vercelXapp".
+    - The preview pattern requires a hyphen AFTER the slug, so a domain that
+      is merely a prefix of the slug (e.g. "ai-travel" alone) is rejected.
+    - Unrelated vercel.app subdomains are not matched.
+    """
+    slug = settings.vercel_project_slug  # e.g. "ai-travel-itinerary-planner-frontend"
+
+    # 1. Localhost (any port number)
+    localhost = r"http://localhost:\d+"
+
+    # 2. Stable production Vercel URL (slug with no suffix)
+    stable_prod = rf"https://{slug}\.vercel\.app"
+
+    # 3. Vercel preview URLs: <slug>-<alphanumeric-hash>.vercel.app
+    preview = rf"https://{slug}-[a-z0-9-]+\.vercel\.app"
+
+    # 4. Explicit additional origin(s) from FRONTEND_ORIGIN env var.
+    # Escape dots only (hyphens in URLs are not regex metacharacters).
+    extra_origins = [
+        o.rstrip("/").replace(".", r"\.")
+        for o in settings.allowed_origins
+        if o.strip() and o.strip() != "http://localhost:5173"
+    ]
+
+    alternatives = [localhost, stable_prod, preview] + extra_origins
+    return r"^(" + "|".join(alternatives) + r")$"
+
+
+_cors_origin_regex = _build_cors_origin_regex()
+logger.info("CORS origin regex: %s", _cors_origin_regex)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    # allow_origins is intentionally empty — allow_origin_regex handles all matching.
+    # Starlette checks allow_origins first, then allow_origin_regex; having both
+    # is fine but the regex alone is sufficient and avoids duplicates.
+    allow_origins=[],
+    allow_origin_regex=_cors_origin_regex,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 

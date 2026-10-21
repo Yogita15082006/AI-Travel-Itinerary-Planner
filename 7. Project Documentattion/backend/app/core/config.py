@@ -23,13 +23,18 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
 
     # Application
-    # Comma-separated list of allowed frontend origins, e.g.:
-    # FRONTEND_ORIGIN=https://my-app.vercel.app,http://localhost:5173
+    # Stable production frontend origin (no trailing slash).
+    # Set in Render: FRONTEND_ORIGIN=https://ai-travel-itinerary-planner-frontend.vercel.app
     frontend_origin: str = "http://localhost:5173"
+
+    # Vercel project slug used to validate preview deployment URLs.
+    # Preview URLs follow the pattern: https://<slug>-<hash>.vercel.app
+    # Set in Render: VERCEL_PROJECT_SLUG=ai-travel-itinerary-planner-frontend
+    vercel_project_slug: str = "ai-travel-itinerary-planner-frontend"
 
     @property
     def allowed_origins(self) -> List[str]:
-        """Return the frontend_origin value split on commas, stripping whitespace."""
+        """Return the explicit frontend_origin value split on commas, stripping whitespace."""
         return [o.strip() for o in self.frontend_origin.split(",") if o.strip()]
 
     environment: str = "development"

@@ -472,3 +472,114 @@ class TestDateCalculations:
             total_budget=5000.0,
         )
         assert req.num_days == 31
+
+
+# ============================================================
+# 8. CORS Behaviour
+# ============================================================
+
+class TestCORSBehaviour:
+    """
+    Verify that the CORS middleware correctly allows/denies origins
+    and that OPTIONS preflight requests are handled.
+
+    We use the TestClient with raise_server_exceptions=False so that
+    CORS-rejected requests return the actual HTTP response rather than
+    raising an exception inside the test runner.
+    """
+
+    PRODUCTION_ORIGIN = "https://ai-travel-itinerary-planner-frontend.vercel.app"
+    PREVIEW_ORIGIN    = "https://ai-travel-itinerary-planner-frontend-aq5uotrqg.vercel.app"
+    MALICIOUS_ORIGIN  = "https://evil-site.com"
+    UNRELATED_VERCEL  = "https://some-other-project-abc123.vercel.app"
+    LOCALHOST_ORIGIN  = "http://localhost:5173"
+
+    def _options(self, origin: str, path: str = "/api/trips") -> object:
+        """Send an OPTIONS preflight for the given origin."""
+        return client.options(
+            path,
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "Authorization, Content-Type",
+            },
+        )
+
+    def _get_with_origin(self, origin: str, path: str = "/api/health") -> object:
+        """Send a simple GET with an Origin header."""
+        return client.get(path, headers={"Origin": origin})
+
+    # ── 1. Production origin is allowed ──────────────────────────────────────
+
+    def test_production_origin_get_has_acao_header(self):
+        response = self._get_with_origin(self.PRODUCTION_ORIGIN)
+        assert response.status_code == 200
+        assert response.headers.get("access-control-allow-origin") == self.PRODUCTION_ORIGIN
+
+    # ── 2. Scoped Vercel preview origin is allowed ────────────────────────────
+
+    def test_preview_origin_get_has_acao_header(self):
+        response = self._get_with_origin(self.PREVIEW_ORIGIN)
+        assert response.status_code == 200
+        assert response.headers.get("access-control-allow-origin") == self.PREVIEW_ORIGIN
+
+    # ── 3. Unrelated malicious origin is rejected ─────────────────────────────
+
+    def test_malicious_origin_has_no_acao_header(self):
+        response = self._get_with_origin(self.MALICIOUS_ORIGIN)
+        # CORS middleware must NOT echo back an unrecognised origin
+        acao = response.headers.get("access-control-allow-origin", "")
+        assert acao != self.MALICIOUS_ORIGIN
+        assert acao != "*"
+
+    def test_unrelated_vercel_origin_has_no_acao_header(self):
+        response = self._get_with_origin(self.UNRELATED_VERCEL)
+        acao = response.headers.get("access-control-allow-origin", "")
+        assert acao != self.UNRELATED_VERCEL
+        assert acao != "*"
+
+    # ── 4. OPTIONS preflight returns correct headers ──────────────────────────
+
+    def test_preflight_from_production_origin(self):
+        response = self._options(self.PRODUCTION_ORIGIN)
+        assert response.status_code == 200
+        assert response.headers.get("access-control-allow-origin") == self.PRODUCTION_ORIGIN
+        assert "access-control-allow-methods" in response.headers
+        assert "access-control-allow-headers" in response.headers
+
+    def test_preflight_from_preview_origin(self):
+        response = self._options(self.PREVIEW_ORIGIN)
+        assert response.status_code == 200
+        assert response.headers.get("access-control-allow-origin") == self.PREVIEW_ORIGIN
+
+    def test_preflight_rejected_for_malicious_origin(self):
+        response = self._options(self.MALICIOUS_ORIGIN)
+        acao = response.headers.get("access-control-allow-origin", "")
+        assert acao != self.MALICIOUS_ORIGIN
+        assert acao != "*"
+
+    # ── 5. Localhost allowed (dev ergonomics) ────────────────────────────────
+
+    def test_localhost_origin_allowed(self):
+        response = self._get_with_origin(self.LOCALHOST_ORIGIN)
+        assert response.headers.get("access-control-allow-origin") == self.LOCALHOST_ORIGIN
+
+    # ── 6. Sanity-check the regex pattern itself ──────────────────────────────
+
+    def test_cors_regex_matches_correct_origins(self):
+        import re
+        from app.main import _cors_origin_regex
+        pattern = re.compile(_cors_origin_regex)
+
+        # Must match
+        assert pattern.match(self.PRODUCTION_ORIGIN)
+        assert pattern.match(self.PREVIEW_ORIGIN)
+        assert pattern.match("http://localhost:5173")
+        assert pattern.match("http://localhost:3000")
+
+        # Must NOT match
+        assert not pattern.match(self.MALICIOUS_ORIGIN)
+        assert not pattern.match(self.UNRELATED_VERCEL)
+        assert not pattern.match("https://ai-travel-itinerary-planner-frontend.vercel.app.evil.com")
+        assert not pattern.match("")
+
