@@ -41,7 +41,7 @@ BACKEND_URL = "http://localhost:8000"
 SUPABASE_URL = _env.get("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = _env.get("SUPABASE_ANON_KEY", "")
 GROQ_API_KEY = _env.get("GROQ_API_KEY", "")
-GROQ_MODEL = _env.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = _env.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

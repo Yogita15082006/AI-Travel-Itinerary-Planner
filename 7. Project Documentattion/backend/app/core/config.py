@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # Groq AI
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
 
     # Application
     # Stable production frontend origin (no trailing slash).
